@@ -60,36 +60,44 @@ def book():
         date_input.send_keys(target_date)
         date_input.send_keys(Keys.ENTER)
         
-       # 5. FIND AND CLICK THE 'BOOK' BUTTON
-        time.sleep(2.5) # Extra time for the grid to render
+       # 5. FIND AND CLICK THE 'RESERVE' BUTTON
+        time.sleep(2.5) 
         try:
-            print(f"Searching for row containing {WANTED_TIME}...")
-            
-            # This looks for a table row (tr) that contains your time, 
-            # then finds the 'Book' link inside that specific row.
-            search_time = WANTED_TIME.split()[0] # Gets '10:00'
-            xpath_selector = f"//tr[contains(., '{search_time}')]//a[contains(@href, 'booking') or contains(text(), 'Book')]"
+            # We look for '10:00' and then find a link that says 'Reserve' OR 'Book'
+            search_time = WANTED_TIME.split()[0] 
+            print(f"Searching for row containing {search_time}...")
+
+            # Updated XPath to look for 'Reserve'
+            xpath_selector = f"//tr[contains(., '{search_time}')]//a[contains(text(), 'Reserve') or contains(text(), 'Book')]"
             
             booking_button = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_selector)))
             
-            # Scroll and Click
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", booking_button)
             time.sleep(0.5)
             booking_button.click()
             
-            print(f"SUCCESS: Clicked 'Book' for {WANTED_TIME}")
+            print(f"SUCCESS: Clicked the button for {WANTED_TIME}")
             
-            # --- FINAL STEP: THE CONFIRMATION POPUP ---
-            # Most sites show a 'Finalize' or 'Finish' button here.
-            # We'll wait 2 seconds and click the most common 'Finish' button ID.
+            # --- FINAL STEP: THE CONFIRMATION ---
             time.sleep(2)
             try:
-                # Common buttons for this system are 'btnFinish' or 'Finish'
-                finish_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Finish') or contains(@id, 'Finish')]")
+                # Looking for 'Finish', 'Reserve', or 'Confirm' to finalize
+                finish_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Finish') or contains(@value, 'Reserve') or contains(@id, 'Finish')]")
                 finish_btn.click()
-                print("Booking confirmed! You should receive an email.")
+                print("Booking confirmed!")
             except:
-                print("No 'Finish' button found. You may need to confirm manually, but the slot is likely held.")
+                print("Manual confirmation may be needed, but the slot was clicked.")
+            
+        except Exception as e:
+            print(f"Still couldn't find the {WANTED_TIME} slot.")
+            # Fallback: Just click the first 'Reserve' or 'Book' button on the page
+            print("Attempting to grab the first available 'Reserve' button...")
+            try:
+                first_available = driver.find_element(By.XPATH, "//a[contains(text(), 'Reserve') or contains(text(), 'Book')]")
+                first_available.click()
+                print("Clicked the first available slot.")
+            except:
+                print("No 'Reserve' or 'Book' buttons visible on the page.")
             
         except Exception as e:
             print(f"The bot saw the sheet but couldn't find a row for {WANTED_TIME}.")

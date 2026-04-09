@@ -60,17 +60,29 @@ def book():
         date_input.send_keys(target_date)
         date_input.send_keys(Keys.ENTER)
         
-        # 5. FIND AND CLICK THE 'BOOK' BUTTON
-        time.sleep(1.2) # Short pause for the tee sheet to populate
+       # 5. FIND AND CLICK THE 'BOOK' BUTTON
+        time.sleep(2) # Give it an extra second to fully load the sheet
         try:
-            # Look for the row with your time, then find the 'Book' link in that row
-            xpath_selector = f"//td[contains(text(), '{WANTED_TIME}')]/following-sibling::td//a[contains(text(), 'Book')]"
-            booking_button = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_selector)))
-            booking_button.click()
-            print(f"Successfully clicked 'Book' for {WANTED_TIME}")
+            # This version is much "smarter":
+            # 1. It looks for any cell containing your number (e.g., "10:00")
+            # 2. It finds the very next 'Book' link in the table
+            xpath_selector = f"//td[contains(., '{WANTED_TIME.split()[0]}')]//following::a[contains(text(), 'Book')][1]"
             
-            # Note: If there is a final 'Confirm' or 'Finish' button, 
-            # you would add one more click here.
+            print(f"Searching for slot near {WANTED_TIME}...")
+            booking_button = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_selector)))
+            
+            # Scroll it into view just in case
+            driver.execute_script("arguments[0].scrollIntoView();", booking_button)
+            time.sleep(0.5)
+            
+            booking_button.click()
+            print(f"SUCCESS: Clicked 'Book' for {WANTED_TIME}")
+            
+        except Exception as e:
+            print(f"Bot reached the sheet but couldn't 'grab' the {WANTED_TIME} slot.")
+            print("This usually means the time format on the site is slightly different.")
+            # This line is key: it prints the page text so we can see what the bot sees
+            # print(driver.find_element(By.TAG_NAME, "body").text[:500])
             
         except Exception as e:
             print(f"Time slot {WANTED_TIME} not found or already taken: {e}")

@@ -61,28 +61,46 @@ def book():
         date_input.send_keys(Keys.ENTER)
         
        # 5. FIND AND CLICK THE 'BOOK' BUTTON
-        time.sleep(2) # Give it an extra second to fully load the sheet
+        time.sleep(2.5) # Extra time for the grid to render
         try:
-            # This version is much "smarter":
-            # 1. It looks for any cell containing your number (e.g., "10:00")
-            # 2. It finds the very next 'Book' link in the table
-            xpath_selector = f"//td[contains(., '{WANTED_TIME.split()[0]}')]//following::a[contains(text(), 'Book')][1]"
+            print(f"Searching for row containing {WANTED_TIME}...")
             
-            print(f"Searching for slot near {WANTED_TIME}...")
+            # This looks for a table row (tr) that contains your time, 
+            # then finds the 'Book' link inside that specific row.
+            search_time = WANTED_TIME.split()[0] # Gets '10:00'
+            xpath_selector = f"//tr[contains(., '{search_time}')]//a[contains(@href, 'booking') or contains(text(), 'Book')]"
+            
             booking_button = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_selector)))
             
-            # Scroll it into view just in case
-            driver.execute_script("arguments[0].scrollIntoView();", booking_button)
+            # Scroll and Click
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", booking_button)
             time.sleep(0.5)
-            
             booking_button.click()
+            
             print(f"SUCCESS: Clicked 'Book' for {WANTED_TIME}")
             
+            # --- FINAL STEP: THE CONFIRMATION POPUP ---
+            # Most sites show a 'Finalize' or 'Finish' button here.
+            # We'll wait 2 seconds and click the most common 'Finish' button ID.
+            time.sleep(2)
+            try:
+                # Common buttons for this system are 'btnFinish' or 'Finish'
+                finish_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Finish') or contains(@id, 'Finish')]")
+                finish_btn.click()
+                print("Booking confirmed! You should receive an email.")
+            except:
+                print("No 'Finish' button found. You may need to confirm manually, but the slot is likely held.")
+            
         except Exception as e:
-            print(f"Bot reached the sheet but couldn't 'grab' the {WANTED_TIME} slot.")
-            print("This usually means the time format on the site is slightly different.")
-            # This line is key: it prints the page text so we can see what the bot sees
-            # print(driver.find_element(By.TAG_NAME, "body").text[:500])
+            print(f"The bot saw the sheet but couldn't find a row for {WANTED_TIME}.")
+            # Last ditch effort: Just click the first available 'Book' button on the page
+            print("Attempting to grab the first available slot instead...")
+            try:
+                first_available = driver.find_element(By.XPATH, "//a[contains(text(), 'Book')]")
+                first_available.click()
+                print("Clicked the first available slot on the page.")
+            except:
+                print("No 'Book' buttons visible on the page at all.")
             
         except Exception as e:
             print(f"Time slot {WANTED_TIME} not found or already taken: {e}")

@@ -22,93 +22,72 @@ def book():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
+    # Adding a 'User Agent' makes the bot look like a real Mac browser
+    options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    wait = WebDriverWait(driver, 20) # Increased to 20 seconds
+    wait = WebDriverWait(driver, 15)
     
     try:
-        # 1. LOGIN
-        print("Navigating to Briarwood...")
-        driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
+        # 1. THE BYPASS LOGIN
+        # We go to the login page first to get the session cookie
+        print("Authenticating...")
+        driver.get("https://www.briarwoodgolfclub.org/login.aspx")
         
-        print("Submitting Login...")
         wait.until(EC.presence_of_element_located((By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtUsername"))).send_keys(USER)
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(PASS)
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(Keys.ENTER)
-        
-        # 2. THE DRILL-DOWN (Finding the sheet)
-        time.sleep(8) # Long wait for the heavy CE portal to load
-        
-        # Sometimes you have to click the word 'Tee Sheet' to actually load the frame
-        try:
-            print("Ensuring Tee Sheet tab is active...")
-            sheet_tab = driver.find_element(By.XPATH, "//span[text()='Tee Sheet'] | //a[text()='Tee Sheet']")
-            driver.execute_script("arguments[0].click();", sheet_tab)
-            time.sleep(3)
-        except:
-            print("Already on Tee Sheet tab or tab not clickable.")
+        time.sleep(5)
 
-        # DEEP FRAME SEARCH
-        print("Hunting for the interactive frame...")
-        all_frames = driver.find_elements(By.TAG_NAME, "iframe")
-        for i, frame in enumerate(all_frames):
-            driver.switch_to.default_content()
-            driver.switch_to.frame(frame)
-            # Look for inner frames (Frame-in-Frame)
-            inner_frames = driver.find_elements(By.TAG_NAME, "iframe")
-            if inner_frames:
-                print(f"Frame {i} has {len(inner_frames)} inner frames. Diving deeper...")
-                driver.switch_to.frame(inner_frames[0])
-            
-            try:
-                # This is the "Gold Standard" ID for ClubEssential booking dates
-                wait.until(EC.presence_of_element_located((By.ID, "txtDate")))
-                print(f"SUCCESS: Interactive sheet found!")
-                break
-            except:
-                continue
+        # 2. JUMP DIRECTLY TO THE SHEET
+        # We use the specific SSID and PageID for the booking engine
+        print("Jumping to direct booking URL...")
+        direct_url = "https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&ssid=100184&vnf=1"
+        driver.get(direct_url)
+        time.sleep(5)
 
-        # 3. SET DATE & TIME
+        # 3. DATE SETUP
         tz = pytz.timezone('US/Central')
         target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y") # TEST MODE
 
-        # TIMER LOOP (Uncomment for Thursday morning!)
-        # print("Waiting for 7:00 AM CST...")
+        # Real-time wait (Uncomment for Thursday morning!)
         # while datetime.now(tz).strftime("%H:%M:%S") < "07:00:00":
         #    time.sleep(0.1)
 
+        # 4. SEARCH FOR DATE INPUT NO MATTER WHERE IT IS
         print(f"Setting date to {target_date}...")
-        date_input = driver.find_element(By.ID, "txtDate")
-        date_input.click()
-        date_input.clear()
-        date_input.send_keys(target_date)
-        date_input.send_keys(Keys.ENTER)
-        time.sleep(4)
-
-        # 4. GRAB THE SLOT
-        print(f"Looking for {WANTED_TIME}...")
-        # Broadest possible XPATH to find that Reserve button from your screenshot
-        xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
-        btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
-        
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
-        time.sleep(0.5)
-        driver.execute_script("arguments[0].click();", btn)
-        print("RESERVE CLICKED!")
-
-        # 5. FINAL POPUP
-        time.sleep(2)
+        # We search 'everywhere' (//) for the date box
         try:
-            finish = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
-            driver.execute_script("arguments[0].click();", finish)
-            print("BOOKING CONFIRMED")
+            date_box = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@id='txtDate' or @name='txtDate']")))
+            date_box.click()
+            date_box.clear()
+            date_box.send_keys(target_date)
+            date_box.send_keys(Keys.ENTER)
+            time.sleep(3)
         except:
-            print("Manual confirmation might be needed, but the time is likely held.")
+            print("Date box still hidden. Trying a page refresh...")
+            driver.refresh()
+            time.sleep(3)
+
+        # 5. CLICK THE RESERVE BUTTON
+        print(f"Searching for {WANTED_TIME}...")
+        # This XPath is based on your screenshot: find time text, then next Reserve button
+        btn_xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
+        
+        btn = wait.until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
+        driver.execute_script("arguments[0].click();", btn)
+        print("SUCCESS: Reserve button clicked!")
+
+        # 6. CONFIRMATION
+        time.sleep(2)
+        confirm_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
+        confirm_btn.click()
+        print("BOOKING FINALIZED")
 
     except Exception as e:
-        print(f"Final Error: {e}")
-        # Take a screenshot if it fails (GitHub Actions will save this in 'Artifacts')
-        driver.save_screenshot("error_view.png")
+        print(f"Bypass failed: {e}")
+        # Let's see if we are at least logged in
+        print("Current URL:", driver.current_url)
     finally:
         driver.quit()
 

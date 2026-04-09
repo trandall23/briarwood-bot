@@ -24,77 +24,91 @@ def book():
     options.add_argument("--window-size=1920,1080")
     
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    wait = WebDriverWait(driver, 10)
+    wait = WebDriverWait(driver, 20) # Increased to 20 seconds
     
     try:
         # 1. LOGIN
+        print("Navigating to Briarwood...")
         driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
         
+        print("Submitting Login...")
         wait.until(EC.presence_of_element_located((By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtUsername"))).send_keys(USER)
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(PASS)
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(Keys.ENTER)
         
-        # 2. DATE CALCULATION
-        tz = pytz.timezone('US/Central')
-        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y") # TEST MODE
+        # 2. THE DRILL-DOWN (Finding the sheet)
+        time.sleep(8) # Long wait for the heavy CE portal to load
         
-        # 3. THE IFRAME HUNT
-        time.sleep(6) # Give it plenty of time
-        
-        found_sheet = False
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        print(f"Detected {len(iframes)} frames. Searching for the tee sheet...")
+        # Sometimes you have to click the word 'Tee Sheet' to actually load the frame
+        try:
+            print("Ensuring Tee Sheet tab is active...")
+            sheet_tab = driver.find_element(By.XPATH, "//span[text()='Tee Sheet'] | //a[text()='Tee Sheet']")
+            driver.execute_script("arguments[0].click();", sheet_tab)
+            time.sleep(3)
+        except:
+            print("Already on Tee Sheet tab or tab not clickable.")
 
-        for i, frame in enumerate(iframes):
-            driver.switch_to.default_content() # Go back to main page
-            driver.switch_to.frame(frame) # Dive into frame i
+        # DEEP FRAME SEARCH
+        print("Hunting for the interactive frame...")
+        all_frames = driver.find_elements(By.TAG_NAME, "iframe")
+        for i, frame in enumerate(all_frames):
+            driver.switch_to.default_content()
+            driver.switch_to.frame(frame)
+            # Look for inner frames (Frame-in-Frame)
+            inner_frames = driver.find_elements(By.TAG_NAME, "iframe")
+            if inner_frames:
+                print(f"Frame {i} has {len(inner_frames)} inner frames. Diving deeper...")
+                driver.switch_to.frame(inner_frames[0])
+            
             try:
-                # Check if the date input exists in this specific frame
-                driver.find_element(By.ID, "txtDate")
-                print(f"SUCCESS: Tee sheet found in Frame #{i}")
-                found_sheet = True
+                # This is the "Gold Standard" ID for ClubEssential booking dates
+                wait.until(EC.presence_of_element_located((By.ID, "txtDate")))
+                print(f"SUCCESS: Interactive sheet found!")
                 break
             except:
                 continue
-        
-        if not found_sheet:
-            print("COULD NOT FIND TEE SHEET IN ANY FRAME.")
-            driver.switch_to.default_content() # Stay on main page as fallback
 
-        # 4. SET DATE
-        date_input = wait.until(EC.element_to_be_clickable((By.ID, "txtDate")))
+        # 3. SET DATE & TIME
+        tz = pytz.timezone('US/Central')
+        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y") # TEST MODE
+
+        # TIMER LOOP (Uncomment for Thursday morning!)
+        # print("Waiting for 7:00 AM CST...")
+        # while datetime.now(tz).strftime("%H:%M:%S") < "07:00:00":
+        #    time.sleep(0.1)
+
+        print(f"Setting date to {target_date}...")
+        date_input = driver.find_element(By.ID, "txtDate")
         date_input.click()
         date_input.clear()
         date_input.send_keys(target_date)
         date_input.send_keys(Keys.ENTER)
-        time.sleep(4) # Wait for "Reserve" buttons to appear
-        
-        # 5. CLICK RESERVE
-        print(f"Scanning for {WANTED_TIME}...")
-        # We use a very broad search now: find any link near our time
-        xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve') or contains(text(), 'Book')][1]"
-        
+        time.sleep(4)
+
+        # 4. GRAB THE SLOT
+        print(f"Looking for {WANTED_TIME}...")
+        # Broadest possible XPATH to find that Reserve button from your screenshot
+        xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
         btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+        
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
         time.sleep(0.5)
         driver.execute_script("arguments[0].click();", btn)
-        print("SUCCESS: Slot selected!")
-        
-        # 6. FINAL CONFIRMATION
+        print("RESERVE CLICKED!")
+
+        # 5. FINAL POPUP
         time.sleep(2)
         try:
-            # Look for a final 'Reserve' or 'Finish' button
             finish = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
-            finish.click()
+            driver.execute_script("arguments[0].click();", finish)
             print("BOOKING CONFIRMED")
         except:
-            print("Final button not found, but slot was clicked. Check your email!")
+            print("Manual confirmation might be needed, but the time is likely held.")
 
     except Exception as e:
-        print(f"Error encountered: {e}")
-        # Final debug: What does the bot actually see right now?
-        print("Bot's current view (First 500 chars):")
-        print(driver.find_element(By.TAG_NAME, "body").text[:500])
+        print(f"Final Error: {e}")
+        # Take a screenshot if it fails (GitHub Actions will save this in 'Artifacts')
+        driver.save_screenshot("error_view.png")
     finally:
         driver.quit()
 

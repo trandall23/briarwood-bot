@@ -1,0 +1,26 @@
+name: Manual Tee Time Trigger
+on:
+  workflow_dispatch:
+    inputs:
+      tee_time:
+        description: 'Time (e.g., 08:00 AM)'
+        required: true
+        default: '08:00 AM'
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install selenium webdriver-manager
+      - name: Run Bot
+        env:
+          USER: ${{ secrets.GOLF_USER }}
+          PASS: ${{ secrets.GOLF_PASS }}
+          TARGET_TIME: ${{ github.event.inputs.tee_time }}
+        run: python bot.py

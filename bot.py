@@ -14,7 +14,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # --- CONFIGURATION ---
 USER = os.getenv("USER")
 PASS = os.getenv("PASS")
-WANTED_TIME = os.getenv("TARGET_TIME") # e.g., "08:00 AM"
+WANTED_TIME = os.getenv("TARGET_TIME") # e.g., "10:00 AM"
 
 def book():
     options = Options()
@@ -38,19 +38,19 @@ def book():
         
         # 2. CALCULATE DATE (7 Days out in CST)
         tz = pytz.timezone('US/Central')
-        target_date = (datetime.now(tz) + timedelta(days=7)).strftime("%m/%d/%Y")
+        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y")
         
         # 3. PRECISION WAIT UNTIL 7:00:00 AM CST
         print(f"Targeting Date: {target_date} | Time: {WANTED_TIME}")
         print("Standing by for 7:00 AM CST release...")
         
-        while True:
-            now_cst = datetime.now(tz)
+       # while True:
+       #     now_cst = datetime.now(tz)
             # When it hits 7:00:00 AM, we break the loop and act
-            if now_cst.hour == 7 and now_cst.minute == 0:
-                print(f"GO! Local Time: {now_cst.strftime('%H:%M:%S')}")
-                break
-            time.sleep(0.1) # Check every 100ms
+       #     if now_cst.hour == 7 and now_cst.minute == 0:
+       #         print(f"GO! Local Time: {now_cst.strftime('%H:%M:%S')}")
+       #         break
+       #     time.sleep(0.1) # Check every 100ms
             
         # 4. SET DATE
         # We refresh or interact with the date picker the moment it turns 7 AM

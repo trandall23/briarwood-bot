@@ -61,54 +61,45 @@ def book():
         date_input.send_keys(Keys.ENTER)
         
        # 5. FIND AND CLICK THE 'RESERVE' BUTTON
-        time.sleep(2.5) 
+        time.sleep(3) # Give the green bars plenty of time to render
         try:
-            # We look for '10:00' and then find a link that says 'Reserve' OR 'Book'
-            search_time = WANTED_TIME.split()[0] 
-            print(f"Searching for row containing {search_time}...")
-
-            # Updated XPath to look for 'Reserve'
-            xpath_selector = f"//tr[contains(., '{search_time}')]//a[contains(text(), 'Reserve') or contains(text(), 'Book')]"
+            print(f"Searching for the 'Reserve' button next to {WANTED_TIME}...")
+            
+            # This XPath translates to: 
+            # "Find the element that has the text '10:00 AM' exactly, 
+            # then find the 'Reserve' link right next to it."
+            xpath_selector = f"//*[text()='{WANTED_TIME}']/following::a[contains(text(), 'Reserve')][1]"
             
             booking_button = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_selector)))
             
+            # Scroll to it
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", booking_button)
             time.sleep(0.5)
-            booking_button.click()
             
-            print(f"SUCCESS: Clicked the button for {WANTED_TIME}")
+            # Use a 'JavaScript Click' - this is more powerful for these green buttons
+            driver.execute_script("arguments[0].click();", booking_button)
             
-            # --- FINAL STEP: THE CONFIRMATION ---
+            print(f"SUCCESS: Clicked 'Reserve' for {WANTED_TIME}")
+            
+            # --- FINAL STEP: CONFIRMATION ---
             time.sleep(2)
             try:
-                # Looking for 'Finish', 'Reserve', or 'Confirm' to finalize
-                finish_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Finish') or contains(@value, 'Reserve') or contains(@id, 'Finish')]")
+                # Based on the screenshot, look for a 'Reserve' or 'Finish' button in the popup
+                finish_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish') or @id='btnReserve']")
                 finish_btn.click()
-                print("Booking confirmed!")
+                print("Final confirmation clicked!")
             except:
-                print("Manual confirmation may be needed, but the slot was clicked.")
-            
+                print("Could not find final 'Finish' button, but the slot was initiated.")
+                
         except Exception as e:
-            print(f"Still couldn't find the {WANTED_TIME} slot.")
-            # Fallback: Just click the first 'Reserve' or 'Book' button on the page
-            print("Attempting to grab the first available 'Reserve' button...")
+            print(f"Direct search failed. Trying 'First Available' fallback...")
             try:
-                first_available = driver.find_element(By.XPATH, "//a[contains(text(), 'Reserve') or contains(text(), 'Book')]")
-                first_available.click()
-                print("Clicked the first available slot.")
+                # This finds the very first green 'Reserve' button on the whole page
+                first_reserve = driver.find_element(By.XPATH, "//a[contains(text(), 'Reserve')]")
+                first_reserve.click()
+                print("Clicked the first available 'Reserve' button on the page.")
             except:
-                print("No 'Reserve' or 'Book' buttons visible on the page.")
-            
-        except Exception as e:
-            print(f"The bot saw the sheet but couldn't find a row for {WANTED_TIME}.")
-            # Last ditch effort: Just click the first available 'Book' button on the page
-            print("Attempting to grab the first available slot instead...")
-            try:
-                first_available = driver.find_element(By.XPATH, "//a[contains(text(), 'Book')]")
-                first_available.click()
-                print("Clicked the first available slot on the page.")
-            except:
-                print("No 'Book' buttons visible on the page at all.")
+                print("Failed to find any 'Reserve' buttons. Check if the tee sheet loaded.")
             
         except Exception as e:
             print(f"Time slot {WANTED_TIME} not found or already taken: {e}")

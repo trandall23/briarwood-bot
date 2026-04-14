@@ -69,27 +69,40 @@ def book():
             driver.refresh()
             time.sleep(3)
 
-        # 5. CLICK THE RESERVE BUTTON
-        print(f"Searching for {WANTED_TIME}...")
-        # This XPath is based on your screenshot: find time text, then next Reserve button
-        btn_xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
+        # 5. THE AGGRESSIVE GRAB
+        time.sleep(5) # Give the sheet plenty of time to load
+        print(f"Scanning page for {WANTED_TIME}...")
         
-        btn = wait.until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
-        driver.execute_script("arguments[0].click();", btn)
-        print("SUCCESS: Reserve button clicked!")
-
-        # 6. CONFIRMATION
-        time.sleep(2)
-        confirm_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
-        confirm_btn.click()
-        print("BOOKING FINALIZED")
-
-    except Exception as e:
-        print(f"Bypass failed: {e}")
-        # Let's see if we are at least logged in
-        print("Current URL:", driver.current_url)
-    finally:
-        driver.quit()
-
-if __name__ == "__main__":
-    book()
+        try:
+            # This looks for the time text and then find the very next 'Reserve' link
+            # It uses 'contains' to handle any weird spacing or hidden characters
+            xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
+            
+            # Wait up to 15 seconds for the button to be clickable
+            booking_button = WebDriverWait(driver, 15).until(
+                EC.element_to_be_clickable((By.XPATH, xpath))
+            )
+            
+            # Use JavaScript to click it (bypasses any 'invisible' overlays)
+            driver.execute_script("arguments[0].click();", booking_button)
+            print(f"SUCCESS: Clicked Reserve for {WANTED_TIME}")
+            
+            # 6. THE FINAL CONFIRMATION
+            time.sleep(2)
+            try:
+                # Look for a 'Finish' or 'Reserve' button in the popup
+                final_btn = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish') or contains(@id, 'Finish')]")
+                driver.execute_script("arguments[0].click();", final_btn)
+                print("FINAL CONFIRMATION CLICKED!")
+            except:
+                print("No final confirmation button found—the slot might already be held.")
+                
+        except Exception as e:
+            print(f"Could not find the {WANTED_TIME} slot.")
+            # Fallback: Just click the FIRST Reserve button on the whole page
+            try:
+                first_btn = driver.find_element(By.XPATH, "//a[contains(text(), 'Reserve')]")
+                driver.execute_script("arguments[0].click();", first_btn)
+                print("Clicked the first available 'Reserve' button instead.")
+            except:
+                print("Total Failure: No 'Reserve' buttons found on the page.")

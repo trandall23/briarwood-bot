@@ -1,4 +1,29 @@
-- name: Run Bot
+name: Manual Tee Time Trigger
+on:
+  workflow_dispatch:
+    inputs:
+      tee_time:
+        description: 'Time (e.g., 10:00 AM)'
+        required: true
+        default: '10:00 AM'
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install selenium webdriver-manager pytz
+
+      - name: Run Bot
         env:
           USER: ${{ secrets.GOLF_USER }}
           PASS: ${{ secrets.GOLF_PASS }}

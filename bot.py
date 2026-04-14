@@ -14,7 +14,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # --- CONFIGURATION ---
 USER = os.getenv("USER")
 PASS = os.getenv("PASS")
-WANTED_TIME = os.getenv("TARGET_TIME") 
+WANTED_TIME = os.getenv("TARGET_TIME") # e.g., "9:30 AM"
 
 def book():
     options = Options()
@@ -34,39 +34,43 @@ def book():
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(PASS)
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(Keys.ENTER)
         
-        # 2. NAVIGATE TO TEE SHEET PAGE
+        # 2. NAVIGATE
         time.sleep(7)
         driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
         time.sleep(5)
 
-        # 3. CLICK THE DATE ICON (To trigger the grid)
+        # 3. CLICK THE DATE ICON
         tz = pytz.timezone('US/Central')
-        # We want to click the date for 'Wed 15' in your test
+        # Change to days=7 for the real run!
         target_day_num = (datetime.now(tz) + timedelta(days=1)).strftime("%-d") 
         print(f"Triggering grid for day: {target_day_num}")
         
         try:
-            # Looks for the weather icon/date text and clicks it
             date_trigger = wait.until(EC.element_to_be_clickable((By.XPATH, f"//div[contains(@class, 'date') and contains(., '{target_day_num}')] | //*[text()='{target_day_num}']")))
             driver.execute_script("arguments[0].click();", date_trigger)
-            print("Date clicked, waiting for grid...")
-            time.sleep(5)
+            time.sleep(6)
         except:
-            print("Could not find date trigger, grid might already be loading.")
+            print("Date trigger not needed or not found.")
 
-        # 4. EXHAUSTIVE SEARCH FOR RESERVE BUTTON
+        # 4. FUZZY SEARCH FOR RESERVE BUTTON
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        print(f"Checking {len(iframes)} frames for the Reserve button...")
+        print(f"Checking {len(iframes)} frames...")
         
+        # Strip the AM/PM to just search for the digits (e.g., "9:30")
+        time_digits = WANTED_TIME.replace(" AM", "").replace(" PM", "").strip()
         found = False
+        
         for i, frame in enumerate(iframes):
             driver.switch_to.default_content()
             driver.switch_to.frame(frame)
             try:
-                # Look for the specific time and its Reserve button
-                xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
+                # This XPATH finds any element containing the numbers (9:30) 
+                # and then finds the next Reserve link
+                xpath = f"//*[contains(text(), '{time_digits}')]/following::a[contains(text(), 'Reserve')][1]"
                 btn = driver.find_element(By.XPATH, xpath)
-                print(f"SUCCESS: Found button in frame {i}!")
+                
+                print(f"SUCCESS: Found {time_digits} in frame {i}!")
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
                 driver.execute_script("arguments[0].click();", btn)
                 found = True
                 break
@@ -74,7 +78,25 @@ def book():
                 continue
         
         if not found:
-            raise Exception(f"Grid loaded but could not find {WANTED_TIME} Reserve button.")
+            # FALLBACK: Just click the FIRST 'Reserve' button available on the whole page
+            print("Target time not found. Attempting to grab the FIRST available slot...")
+            try:
+                first_btn = driver.find_element(By.XPATH, "//a[contains(text(), 'Reserve')]")
+                driver.execute_script("arguments[0].click();", first_btn)
+                print("Clicked first available Reserve button!")
+                found = True
+            except:
+                raise Exception(f"Total failure: No Reserve buttons found in any frame.")
+
+        # 5. FINAL CONFIRMATION
+        if found:
+            time.sleep(2)
+            try:
+                finish = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
+                driver.execute_script("arguments[0].click();", finish)
+                print("BOOKING COMPLETED!")
+            except:
+                print("No final confirmation button needed or found.")
 
     except Exception as e:
         print(f"Error: {e}")

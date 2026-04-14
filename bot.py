@@ -14,7 +14,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # --- CONFIGURATION ---
 USER = os.getenv("USER")
 PASS = os.getenv("PASS")
-WANTED_TIME = os.getenv("TARGET_TIME") # e.g., "10:00 AM"
+WANTED_TIME = os.getenv("TARGET_TIME") # e.g., "9:30 AM"
 
 def book():
     options = Options()

@@ -14,8 +14,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # --- CONFIGURATION ---
 USER = os.getenv("USER")
 PASS = os.getenv("PASS")
-# Format: "9:30" or just "9" to grab anything in the 9 o'clock hour
-WANTED_TIME = os.getenv("TARGET_TIME") 
+WANTED_TIME = os.getenv("TARGET_TIME") # e.g., "9:30"
 
 def book():
     options = Options()
@@ -36,57 +35,75 @@ def book():
         driver.find_element(By.CSS_SELECTOR, "input[id*='txtPassword']").send_keys(PASS)
         driver.find_element(By.CSS_SELECTOR, "input[id*='txtPassword']").send_keys(Keys.ENTER)
         
-        # 2. DATE SETTINGS
+        # 2. NAVIGATE TO TEE SHEET
         time.sleep(7)
+        print("Navigating to Tee Sheet page...")
+        driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
+        
+        # 3. SELECT DATE VIA INPUT BOX
         tz = pytz.timezone('US/Central')
         # TEST: days=1 | REAL: days=7
         target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y")
         
-        # 3. DIRECT JUMP
-        print(f"Jumping to Tee Sheet for {target_date}...")
-        sheet_url = f"https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&ssid=100184&vnf=1&date={target_date}"
-        driver.get(sheet_url)
-
-        # --- TIMER (UNCOMMENT THE 2 LINES BELOW FOR THE 7:00 AM RUN) ---
+        # --- TIMER (UNCOMMENT FOR 7:00 AM THURSDAY) ---
+        # print("Waiting for 07:00:00 AM CST...")
         # while datetime.now(tz).strftime("%H:%M:%S") < "07:00:00":
         #     time.sleep(0.1)
+
+        print(f"Typing date: {target_date}")
         
-        # 4. PATIENT SCAN
-        print("Scanning frames for any Reserve buttons...")
-        time.sleep(12) # Maximum patience for the grid
-        
+        # We find the frame containing the txtDate box first
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        found = False
+        found_date_box = False
+        for i, frame in enumerate(iframes):
+            driver.switch_to.default_content()
+            driver.switch_to.frame(frame)
+            try:
+                date_box = driver.find_element(By.ID, "txtDate")
+                date_box.click()
+                date_box.clear()
+                date_box.send_keys(target_date)
+                date_box.send_keys(Keys.ENTER)
+                print(f"Date entered in frame {i}")
+                found_date_box = True
+                break
+            except:
+                continue
         
-        # We strip AM/PM to be safe
+        if not found_date_box:
+            raise Exception("Could not find the date input box (txtDate) in any frame.")
+
+        # 4. SCAN FOR RESERVE BUTTONS
+        print("Waiting 10s for the grid to update...")
+        time.sleep(10)
+        
+        # Search frames again for the buttons
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        found_btn = False
         search_val = WANTED_TIME.split(" ")[0]
 
         for i, frame in enumerate(iframes):
             driver.switch_to.default_content()
             driver.switch_to.frame(frame)
             try:
-                # OPTION A: Look for your specific time
+                # Target specific time OR any available slot
                 xpath_specific = f"//*[contains(text(), '{search_val}')]/following::a[contains(text(), 'Reserve')][1]"
-                # OPTION B: Look for ANY reserve button as a backup
                 xpath_any = "//a[contains(text(), 'Reserve')]"
                 
-                print(f"Checking frame {i}...")
                 try:
                     btn = driver.find_element(By.XPATH, xpath_specific)
-                    print(f"Target {search_val} found!")
                 except:
                     btn = driver.find_element(By.XPATH, xpath_any)
-                    print("Target time not found, but grabbing FIRST available slot instead!")
-
+                
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
                 driver.execute_script("arguments[0].click();", btn)
-                found = True
+                found_btn = True
                 break
             except:
                 continue
         
-        if not found:
-            raise Exception("No Reserve buttons visible in any frame. Grid might be empty or restricted.")
+        if not found_btn:
+            raise Exception("No Reserve buttons found after typing date.")
 
         # 5. FINAL CONFIRM
         time.sleep(2)
@@ -95,7 +112,7 @@ def book():
             driver.execute_script("arguments[0].click();", confirm)
             print("RESERVATION FINALIZED!")
         except:
-            print("Button clicked, but no final confirmation screen appeared. Check site.")
+            print("Confirmation button not found - check site.")
 
     except Exception as e:
         print(f"Failed: {e}")

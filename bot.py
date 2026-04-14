@@ -22,19 +22,9 @@ def book():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    # Stealth arguments to bypass bot detection
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
     
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    
-    # Hide the 'navigator.webdriver' flag
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    })
-    
     wait = WebDriverWait(driver, 25)
     
     try:
@@ -45,64 +35,87 @@ def book():
         driver.find_element(By.CSS_SELECTOR, "input[id*='txtPassword']").send_keys(PASS)
         driver.find_element(By.CSS_SELECTOR, "input[id*='txtPassword']").send_keys(Keys.ENTER)
         
-        # 2. NAVIGATE & FORCE RELOAD
+        # 2. NAVIGATE
         time.sleep(8)
         driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
         time.sleep(5)
 
-        # 3. SELECT DATE
+        # 3. DATE CALCULATION
         tz = pytz.timezone('US/Central')
-        target_day = (datetime.now(tz) + timedelta(days=1)).strftime("%-d") 
+        # TEST: days=1 | REAL: days=7
+        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y")
         
-        print(f"Targeting Day: {target_day}")
-        date_xpath = f"//div[contains(@class, 'date') and contains(., '{target_day}')] | //*[text()='{target_day}']"
-        date_el = wait.until(EC.presence_of_element_located((By.XPATH, date_xpath)))
-        
-        # Scroll to it and click via JS
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", date_el)
-        time.sleep(1)
-        driver.execute_script("arguments[0].click();", date_el)
-        
-        # 4. THE "KICKSTART" LOOP
-        print("Date clicked. Performing scroll-dance to trigger load...")
-        for _ in range(3):
-            driver.execute_script("window.scrollBy(0, 300);")
-            time.sleep(1)
-            driver.execute_script("window.scrollBy(0, -300);")
-            time.sleep(1)
-            
-        # 5. SCAN EVERY FRAME
-        print("Checking frames for populate...")
-        found = False
+        # 4. THE INSIDE-OUT TRIGGER
+        print(f"Hunting for the hidden date box to trigger {target_date}...")
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        search_val = WANTED_TIME.split(" ")[0]
+        found_trigger = False
 
         for i, frame in enumerate(iframes):
             driver.switch_to.default_content()
             driver.switch_to.frame(frame)
             try:
-                # Give each frame a tiny moment to check
+                # Find the actual text box inside the frame
+                date_box = driver.find_element(By.ID, "txtDate")
+                print(f"Found date box in frame {i}. Activating...")
+                
+                # Human-like interaction
+                date_box.click()
+                date_box.send_keys(Keys.COMMAND + "a") # Select all
+                date_box.send_keys(Keys.BACKSPACE)    # Delete
+                
+                # Type the date slowly
+                for char in target_date:
+                    date_box.send_keys(char)
+                    time.sleep(0.1)
+                
+                date_box.send_keys(Keys.ENTER)
+                found_trigger = True
+                break
+            except:
+                continue
+
+        if not found_trigger:
+            print("Direct date box not found. Clicking weather icon as backup...")
+            driver.switch_to.default_content()
+            day_num = (datetime.now(tz) + timedelta(days=1)).strftime("%-d")
+            driver.execute_script("arguments[0].click();", driver.find_element(By.XPATH, f"//*[text()='{day_num}']"))
+
+        # 5. SCAN FOR RESERVE BUTTONS
+        print("Waiting 12s for the grid to fill...")
+        time.sleep(12)
+        
+        # Final sweep of all frames for ANY reserve button
+        success = False
+        search_val = WANTED_TIME.split(" ")[0]
+        
+        # Re-fetch frames in case the page refreshed
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        for i, frame in enumerate(iframes):
+            driver.switch_to.default_content()
+            driver.switch_to.frame(frame)
+            try:
+                # Look for specific time OR any button
+                xpath_specific = f"//*[contains(text(), '{search_val}')]/following::a[contains(text(), 'Reserve')][1]"
                 btns = driver.find_elements(By.XPATH, "//a[contains(text(), 'Reserve')]")
+                
                 if btns:
-                    print(f"Buttons found in Frame {i}!")
                     try:
-                        # Try finding specific time
-                        btn = driver.find_element(By.XPATH, f"//*[contains(text(), '{search_val}')]/following::a[contains(text(), 'Reserve')][1]")
+                        btn = driver.find_element(By.XPATH, xpath_specific)
+                        print(f"Target {search_val} found!")
                     except:
                         btn = btns[0]
+                        print("Target time not found, but grabbing FIRST available slot!")
                     
                     driver.execute_script("arguments[0].click();", btn)
-                    found = True
+                    success = True
                     break
             except:
                 continue
 
-        if not found:
-            # Last ditch: Take another screenshot to see if the grid finally appeared
-            driver.save_screenshot("error_screenshot.png")
-            raise Exception("Grid failed to load. The site might require a real mouse hover.")
+        if not success:
+            raise Exception("Grid still empty. The 'txtDate' update did not trigger the slots.")
 
-        # 6. FINAL CONFIRM
+        # 6. CONFIRM
         time.sleep(3)
         confirm = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
         driver.execute_script("arguments[0].click();", confirm)

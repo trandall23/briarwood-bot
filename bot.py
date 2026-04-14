@@ -25,83 +25,45 @@ def book():
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    wait = WebDriverWait(driver, 20)
     
     try:
         # 1. LOGIN
-        print("Opening Briarwood...")
         driver.get("https://www.briarwoodgolfclub.org/default.aspx?p=home&E=1")
-        
-        user_field = wait.until(EC.presence_of_element_located((By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtUsername")))
-        user_field.send_keys(USER)
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtUsername"))).send_keys(USER)
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(PASS)
         driver.find_element(By.ID, "masterPageUC_MPCA152_ctl00_ctl02_txtPassword").send_keys(Keys.ENTER)
         
         # 2. NAVIGATE
         time.sleep(8)
-        print("Navigating to Tee Sheet...")
         driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
-        
-        # 3. SMART FRAME SWITCH
         time.sleep(5)
-        print("Searching for the correct frame...")
+
+        # 3. EXHAUSTIVE SEARCH
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        print(f"Checking {len(iframes)} frames...")
+        
+        found = False
         for i, frame in enumerate(iframes):
             driver.switch_to.default_content()
             driver.switch_to.frame(frame)
             try:
-                driver.find_element(By.ID, "txtDate")
-                print(f"Interactive frame found at index {i}!")
+                # Try to find the Reserve button in this frame
+                xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
+                btn = driver.find_element(By.XPATH, xpath)
+                print(f"SUCCESS: Found slot in frame {i}. Clicking...")
+                driver.execute_script("arguments[0].click();", btn)
+                found = True
                 break
             except:
                 continue
-
-        # 4. SET DATE (TEST MODE: Tomorrow)
-        tz = pytz.timezone('US/Central')
-        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y") 
-
-        print(f"Setting date to {target_date}...")
-        date_input = wait.until(EC.element_to_be_clickable((By.ID, "txtDate")))
-        date_input.click()
-        date_input.clear()
-        date_input.send_keys(target_date)
-        date_input.send_keys(Keys.ENTER)
         
-        # 5. WAIT FOR SHEET TO REFRESH
-        print("Waiting for slots to load...")
-        time.sleep(6) # Increase sleep to ensure AJAX finishes
-        
-        # 6. AGGRESSIVE SEARCH FOR RESERVE
-        print(f"Scanning for {WANTED_TIME} Reserve button...")
-        
-        # Try 3 different XPaths in order of reliability
-        selectors = [
-            f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]",
-            f"//tr[contains(., '{WANTED_TIME.split(':')[0]}')]//a[contains(text(), 'Reserve')]",
-            f"//a[contains(@href, 'booking') and contains(., 'Reserve')][1]" # Last ditch: First available
-        ]
-        
-        btn = None
-        for selector in selectors:
-            try:
-                btn = driver.find_element(By.XPATH, selector)
-                if btn.is_displayed():
-                    print(f"Found button using: {selector}")
-                    break
-            except:
-                continue
-        
-        if btn:
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
-            time.sleep(1)
-            driver.execute_script("arguments[0].click();", btn)
-            print("SUCCESS: Reserve button clicked!")
-        else:
-            raise Exception("No Reserve button found after trying all selectors.")
+        if not found:
+            raise Exception(f"Could not find {WANTED_TIME} in any frame.")
 
     except Exception as e:
-        print(f"Bot failed at: {e}")
+        print(f"Error: {e}")
         driver.save_screenshot("error_screenshot.png")
+        raise e # Re-raise to trigger the GitHub Artifact upload
     finally:
         driver.quit()
 

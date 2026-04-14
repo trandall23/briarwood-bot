@@ -25,7 +25,7 @@ def book():
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    wait = WebDriverWait(driver, 30) # Increased wait time
+    wait = WebDriverWait(driver, 20)
     
     try:
         # 1. LOGIN
@@ -50,34 +50,54 @@ def book():
             driver.switch_to.default_content()
             driver.switch_to.frame(frame)
             try:
-                # Check if the date box exists in this frame
                 driver.find_element(By.ID, "txtDate")
                 print(f"Interactive frame found at index {i}!")
                 break
             except:
                 continue
 
-        # 4. DATE SETUP
+        # 4. SET DATE (TEST MODE: Tomorrow)
         tz = pytz.timezone('US/Central')
-        # SET TO days=7 FOR THE ACTUAL THURSDAY RUN
         target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y") 
 
-        # 5. SET DATE & CLICK
         print(f"Setting date to {target_date}...")
-        date_input = wait.until(EC.visibility_of_element_located((By.ID, "txtDate")))
+        date_input = wait.until(EC.element_to_be_clickable((By.ID, "txtDate")))
+        date_input.click()
         date_input.clear()
         date_input.send_keys(target_date)
         date_input.send_keys(Keys.ENTER)
         
-        time.sleep(5) # Critical wait for the slots to refresh
+        # 5. WAIT FOR SHEET TO REFRESH
+        print("Waiting for slots to load...")
+        time.sleep(6) # Increase sleep to ensure AJAX finishes
         
-        print(f"Searching for {WANTED_TIME}...")
-        # Broadest possible search for the Reserve button next to the time
-        xpath = f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]"
+        # 6. AGGRESSIVE SEARCH FOR RESERVE
+        print(f"Scanning for {WANTED_TIME} Reserve button...")
         
-        btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
-        driver.execute_script("arguments[0].click();", btn)
-        print("SUCCESS: Reserve button clicked!")
+        # Try 3 different XPaths in order of reliability
+        selectors = [
+            f"//*[contains(text(), '{WANTED_TIME}')]/following::a[contains(text(), 'Reserve')][1]",
+            f"//tr[contains(., '{WANTED_TIME.split(':')[0]}')]//a[contains(text(), 'Reserve')]",
+            f"//a[contains(@href, 'booking') and contains(., 'Reserve')][1]" # Last ditch: First available
+        ]
+        
+        btn = None
+        for selector in selectors:
+            try:
+                btn = driver.find_element(By.XPATH, selector)
+                if btn.is_displayed():
+                    print(f"Found button using: {selector}")
+                    break
+            except:
+                continue
+        
+        if btn:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+            time.sleep(1)
+            driver.execute_script("arguments[0].click();", btn)
+            print("SUCCESS: Reserve button clicked!")
+        else:
+            raise Exception("No Reserve button found after trying all selectors.")
 
     except Exception as e:
         print(f"Bot failed at: {e}")

@@ -35,91 +35,69 @@ def book():
         driver.find_element(By.CSS_SELECTOR, "input[id*='txtPassword']").send_keys(PASS)
         driver.find_element(By.CSS_SELECTOR, "input[id*='txtPassword']").send_keys(Keys.ENTER)
         
-        # 2. NAVIGATE
+        # 2. NAVIGATE TO THE GOLF PAGE (Ensures session is active)
         time.sleep(8)
+        print("Opening Tee Sheet landing page...")
         driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
         time.sleep(5)
 
-        # 3. DATE CALCULATION
+        # 3. SELECT DATE (Triggering the JavaScript)
         tz = pytz.timezone('US/Central')
-        # TEST: days=1 | REAL: days=7
-        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y")
+        target_day = (datetime.now(tz) + timedelta(days=1)).strftime("%-d") 
         
-        # 4. THE INSIDE-OUT TRIGGER
-        print(f"Hunting for the hidden date box to trigger {target_date}...")
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        found_trigger = False
-
-        for i, frame in enumerate(iframes):
-            driver.switch_to.default_content()
-            driver.switch_to.frame(frame)
-            try:
-                # Find the actual text box inside the frame
-                date_box = driver.find_element(By.ID, "txtDate")
-                print(f"Found date box in frame {i}. Activating...")
-                
-                # Human-like interaction
-                date_box.click()
-                date_box.send_keys(Keys.COMMAND + "a") # Select all
-                date_box.send_keys(Keys.BACKSPACE)    # Delete
-                
-                # Type the date slowly
-                for char in target_date:
-                    date_box.send_keys(char)
-                    time.sleep(0.1)
-                
-                date_box.send_keys(Keys.ENTER)
-                found_trigger = True
-                break
-            except:
-                continue
-
-        if not found_trigger:
-            print("Direct date box not found. Clicking weather icon as backup...")
-            driver.switch_to.default_content()
-            day_num = (datetime.now(tz) + timedelta(days=1)).strftime("%-d")
-            driver.execute_script("arguments[0].click();", driver.find_element(By.XPATH, f"//*[text()='{day_num}']"))
-
-        # 5. SCAN FOR RESERVE BUTTONS
-        print("Waiting 12s for the grid to fill...")
-        time.sleep(12)
+        print(f"Selecting date: {target_day}...")
+        # We search for the date number and click it to trigger the AJAX load
+        date_xpath = f"//div[contains(@class, 'date') and contains(., '{target_day}')] | //*[text()='{target_day}']"
+        date_btn = wait.until(EC.element_to_be_clickable((By.XPATH, date_xpath)))
+        driver.execute_script("arguments[0].click();", date_btn)
         
-        # Final sweep of all frames for ANY reserve button
+        # 4. WAIT FOR THE "ENGINE" TO INITIALIZE
+        print("Date clicked. Waiting for booking engine frames to initialize...")
+        time.sleep(12) 
+
+        # 5. SCAN EVERY FRAME FOR THE RESERVE BUTTON
+        # We do this in a loop because the frame might appear after a few seconds
         success = False
-        search_val = WANTED_TIME.split(" ")[0]
+        search_time = WANTED_TIME.split(" ")[0]
         
-        # Re-fetch frames in case the page refreshed
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        for i, frame in enumerate(iframes):
-            driver.switch_to.default_content()
-            driver.switch_to.frame(frame)
-            try:
-                # Look for specific time OR any button
-                xpath_specific = f"//*[contains(text(), '{search_val}')]/following::a[contains(text(), 'Reserve')][1]"
-                btns = driver.find_elements(By.XPATH, "//a[contains(text(), 'Reserve')]")
-                
-                if btns:
-                    try:
-                        btn = driver.find_element(By.XPATH, xpath_specific)
-                        print(f"Target {search_val} found!")
-                    except:
-                        btn = btns[0]
-                        print("Target time not found, but grabbing FIRST available slot!")
+        for attempt in range(2):
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
+            print(f"Attempt {attempt+1}: Scanning {len(iframes)} frames...")
+            
+            for i, frame in enumerate(iframes):
+                driver.switch_to.default_content()
+                driver.switch_to.frame(frame)
+                try:
+                    # Look for the specific time or ANY reserve button
+                    target_xpath = f"//*[contains(text(), '{search_time}')]/following::a[contains(text(), 'Reserve')][1]"
+                    any_btn = "//a[contains(text(), 'Reserve')]"
                     
+                    try:
+                        btn = driver.find_element(By.XPATH, target_xpath)
+                    except:
+                        btn = driver.find_element(By.XPATH, any_btn)
+                        
+                    print(f"SUCCESS: Found button in frame {i}!")
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
                     driver.execute_script("arguments[0].click();", btn)
                     success = True
                     break
-            except:
-                continue
+                except:
+                    continue
+            if success: break
+            time.sleep(5) # Wait before second attempt
 
         if not success:
-            raise Exception("Grid still empty. The 'txtDate' update did not trigger the slots.")
+            raise Exception("Tee sheet grid did not load even after clicking the date.")
 
-        # 6. CONFIRM
+        # 6. FINAL CONFIRM
         time.sleep(3)
-        confirm = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
-        driver.execute_script("arguments[0].click();", confirm)
-        print("RESERVATION FINALIZED!")
+        try:
+            confirm = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
+            driver.execute_script("arguments[0].click();", confirm)
+            print("RESERVATION COMPLETE!")
+        except:
+            print("Time selected, but no final confirmation button found. Manual check advised.")
 
     except Exception as e:
         print(f"Failed at: {e}")

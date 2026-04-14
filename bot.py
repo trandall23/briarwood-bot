@@ -35,71 +35,74 @@ def book():
         driver.find_element(By.CSS_SELECTOR, "input[id*='txtPassword']").send_keys(Keys.ENTER)
         
         # 2. NAVIGATE
-        time.sleep(8)
+        time.sleep(10) # Heavy wait for session to settle
         driver.get("https://www.briarwoodgolfclub.org/Default.aspx?p=DynamicModule&pageid=131&tt=booking&ssid=100184&vnf=1")
-        time.sleep(5)
+        time.sleep(8) # Wait for the visual landing page
 
-        # 3. DATE SETUP
+        # 3. SELECT DATE
         tz = pytz.timezone('US/Central')
-        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%m/%d/%Y") 
+        # TEST: days=1 | REAL: days=7
+        target_day = (datetime.now(tz) + timedelta(days=1)).strftime("%-d") 
         
-        # 4. DEEP FRAME SEARCH FOR DATE BOX
-        print("Searching all nested frames for the booking engine...")
-        found_date_box = False
+        # 4. EXHAUSTIVE CLICKER
+        print(f"Searching for date icon '{target_day}'...")
         
-        # Get top-level frames
+        # Try to click the date icon on the main page first
+        try:
+            date_icon = wait.until(EC.element_to_be_clickable((By.XPATH, f"//*[contains(@class, 'date') and contains(., '{target_day}')] | //*[text()='{target_day}']")))
+            driver.execute_script("arguments[0].click();", date_icon)
+            print("Date icon clicked on main page.")
+            time.sleep(5)
+        except:
+            print("Date icon not found on main page, checking frames...")
+
+        # 5. SCAN EVERY FRAME FOR THE RESERVE BUTTON
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        found = False
+        
+        # We strip the search time down to the numbers (e.g., "9:30")
+        search_time = WANTED_TIME.split(" ")[0]
+
         for i, frame in enumerate(iframes):
             driver.switch_to.default_content()
             driver.switch_to.frame(frame)
+            print(f"Scanning Frame {i}...")
             
-            # Check for txtDate in this frame OR nested frames
             try:
-                date_box = driver.find_element(By.ID, "txtDate")
-                found_date_box = True
+                # Look for the time followed by a Reserve button
+                target_xpath = f"//*[contains(text(), '{search_time}')]/following::a[contains(text(), 'Reserve')][1]"
+                # Backup: Just any Reserve button
+                any_reserve = "//a[contains(text(), 'Reserve')]"
+                
+                try:
+                    btn = driver.find_element(By.XPATH, target_xpath)
+                except:
+                    btn = driver.find_element(By.XPATH, any_reserve)
+
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+                driver.execute_script("arguments[0].click();", btn)
+                found = True
+                print(f"SUCCESS: Clicked button in frame {i}")
+                break
             except:
-                # Look for frames inside this frame (The "Deep Dive")
-                inner_iframes = driver.find_elements(By.TAG_NAME, "iframe")
-                for j, inner_frame in enumerate(inner_iframes):
-                    driver.switch_to.frame(inner_frame)
+                # Dive one level deeper into nested frames
+                nested = driver.find_elements(By.TAG_NAME, "iframe")
+                for j, n_frame in enumerate(nested):
+                    driver.switch_to.frame(n_frame)
                     try:
-                        date_box = driver.find_element(By.ID, "txtDate")
-                        found_date_box = True
-                        print(f"Found booking engine in nested frame {i}-{j}")
+                        btn = driver.find_element(By.XPATH, "//a[contains(text(), 'Reserve')]")
+                        driver.execute_script("arguments[0].click();", btn)
+                        found = True
+                        print(f"SUCCESS: Clicked button in nested frame {i}-{j}")
                         break
                     except:
                         driver.switch_to.parent_frame()
-            
-            if found_date_box:
-                date_box.click()
-                date_box.clear()
-                date_box.send_keys(target_date)
-                date_box.send_keys(Keys.ENTER)
-                break
+                if found: break
 
-        if not found_date_box:
-            raise Exception("Could not find the booking engine in any frame or nested frame.")
+        if not found:
+            raise Exception("No Reserve buttons found anywhere on the page or in frames.")
 
-        # 5. WAIT AND CLICK RESERVE
-        print("Date set. Waiting for grid...")
-        time.sleep(8)
-        
-        # Re-scan for buttons (using the frame we are currently in)
-        search_val = WANTED_TIME.split(" ")[0]
-        xpath_specific = f"//*[contains(text(), '{search_val}')]/following::a[contains(text(), 'Reserve')][1]"
-        xpath_any = "//a[contains(text(), 'Reserve')]"
-        
-        try:
-            btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_specific)))
-        except:
-            print("Specific time not found, attempting any open slot...")
-            btn = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_any)))
-
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
-        driver.execute_script("arguments[0].click();", btn)
-        print("SUCCESS: Reserve button clicked!")
-
-        # 6. FINAL CONFIRM
+        # 6. FINAL CONFIRMATION
         time.sleep(2)
         confirm = driver.find_element(By.XPATH, "//input[contains(@value, 'Reserve') or contains(@value, 'Finish')]")
         driver.execute_script("arguments[0].click();", confirm)
